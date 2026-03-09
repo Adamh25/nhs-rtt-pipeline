@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NHS RTT &amp; Operational Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0a0e17;
+    --surface:  #111622;
+    --border:   #1e2740;
+    --nhs-blue: #005EB8;
+    --accent:   #00A9CE;
+    --warn:     #FF6B35;
+    --good:     #00D4A8;
+    --text:     #e8edf8;
+    --muted:    #6b7a99;
+    --mono:     'DM Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid lines background ─────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,94,184,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,94,184,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ────────────────────────────────────────────────── */
+  header {
+    position: relative; z-index: 10;
+    padding: 28px 40px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(0,94,184,0.08) 0%, transparent 100%);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+
+  .nhs-badge {
+    background: var(--nhs-blue);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  header h1 span { color: var(--accent); }
+
+  .header-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    line-height: 1.7;
+  }
+
+  /* ── KPI strip ──────────────────────────────────────────────── */
+  .kpi-strip {
+    position: relative; z-index: 10;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .kpi {
+    background: var(--surface);
+    padding: 20px 20px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.2s;
+  }
+  .kpi:hover { background: #141926; }
+
+  .kpi::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .kpi.blue::after  { background: var(--nhs-blue); }
+  .kpi.cyan::after  { background: var(--accent); }
+  .kpi.warn::after  { background: var(--warn); }
+  .kpi.green::after { background: var(--good); }
+
+  .kpi-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .kpi-value.warn  { color: var(--warn); }
+  .kpi-value.good  { color: var(--good); }
+  .kpi-value.cyan  { color: var(--accent); }
+  .kpi-value.blue  { color: #6eb3ff; }
+
+  .kpi-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── Main layout ────────────────────────────────────────────── */
+  main {
+    position: relative; z-index: 10;
+    padding: 28px 40px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  /* ── Panels ──────────────────────────────────────────────────── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 22px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .panel.wide { grid-column: 1 / -1; }
+
+  .panel-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .panel-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Chart containers ─────────────────────────────────────────── */
+  .chart-wrap {
+    position: relative;
+    height: 240px;
+  }
+  .chart-wrap.tall { height: 300px; }
+  .chart-wrap.short { height: 180px; }
+
+  /* ── Table ───────────────────────────────────────────────────── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+  .data-table th {
+    text-align: left;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0 12px 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid rgba(30,39,64,0.6);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+  }
+  .badge.miss  { background: rgba(255,107,53,0.15); color: var(--warn); }
+  .badge.meet  { background: rgba(0,212,168,0.15);  color: var(--good); }
+  .badge.dgh   { background: rgba(0,169,206,0.12);  color: var(--accent); }
+  .badge.teach { background: rgba(0,94,184,0.18);   color: #6eb3ff; }
+
+  .bar-inline {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .bar-bg {
+    flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+
+  /* ── Tabs ──────────────────────────────────────────────────── */
+  .tabs {
+    display: flex; gap: 4px;
+    margin-bottom: 16px;
+  }
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 5px 12px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+  .tab-btn.active {
+    background: var(--nhs-blue);
+    border-color: var(--nhs-blue);
+    color: #fff;
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────── */
+  footer {
+    position: relative; z-index: 10;
+    padding: 16px 40px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* ── Animations ──────────────────────────────────────────────── */
+  @keyframes fadeUp {
+    from { opacity:0; transform: translateY(12px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  .panel { animation: fadeUp 0.4s ease both; }
+  .panel:nth-child(1) { animation-delay: 0.05s; }
+  .panel:nth-child(2) { animation-delay: 0.10s; }
+  .panel:nth-child(3) { animation-delay: 0.15s; }
+  .panel:nth-child(4) { animation-delay: 0.20s; }
+  .panel:nth-child(5) { animation-delay: 0.25s; }
+  .panel:nth-child(6) { animation-delay: 0.30s; }
+
+  @media (max-width: 1100px) {
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    main { grid-template-columns: 1fr; padding: 20px; }
+    .panel.wide { grid-column: 1; }
+    header { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <span class="nhs-badge">NHS ENGLAND</span>
+    <h1>RTT Pathway &amp; <span>Operational Performance</span></h1>
+  </div>
+  <div class="header-meta">
+    SYNTHETIC ANALYSIS DATA &nbsp;|&nbsp; 2023–2024<br>
+    10 TRUSTS &nbsp;·&nbsp; 15,000 RTT PATHWAYS &nbsp;·&nbsp; 20,000 A&amp;E ATTENDANCES
+  </div>
+</header>
+
+<!-- KPI Strip -->
+<div class="kpi-strip">
+  <div class="kpi warn">
+    <div class="kpi-label">RTT Breach Rate</div>
+    <div class="kpi-value warn">32.4%</div>
+    <div class="kpi-sub">target: &lt;8% (92% std)</div>
+  </div>
+  <div class="kpi warn">
+    <div class="kpi-label">Avg Wait (days)</div>
+    <div class="kpi-value warn">113.6</div>
+    <div class="kpi-sub">18wk target = 126 days</div>
+  </div>
+  <div class="kpi warn">
+    <div class="kpi-label">4hr A&amp;E Breach</div>
+    <div class="kpi-value warn">26.2%</div>
+    <div class="kpi-sub">target: &lt;24% (76% std)</div>
+  </div>
+  <div class="kpi cyan">
+    <div class="kpi-label">Total Pathways</div>
+    <div class="kpi-value cyan">15,000</div>
+    <div class="kpi-sub">ICD-10 coded</div>
+  </div>
+  <div class="kpi blue">
+    <div class="kpi-label">A&amp;E Attendances</div>
+    <div class="kpi-value blue">20,000</div>
+    <div class="kpi-sub">2023–2024</div>
+  </div>
+  <div class="kpi warn">
+    <div class="kpi-label">Trusts @92% std</div>
+    <div class="kpi-value warn">0 / 10</div>
+    <div class="kpi-sub">elective recovery deficit</div>
+  </div>
+</div>
+
+<main>
+
+  <!-- RTT Breach Trend -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">RTT 18-Week Breach Rate — Monthly Trend</span>
+      <span class="panel-tag">NHS 92% STANDARD LINE</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="rttTrendChart"></canvas>
+    </div>
+  </div>
+
+  <!-- A&E 4hr Breach -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">A&amp;E 4-Hour Performance — Monthly Trend</span>
+      <span class="panel-tag">76% FLOOR TARGET</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="aeTrendChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Specialty Waitlist Pressure -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Specialty Waitlist Pressure</span>
+      <span class="panel-tag">AVG WAIT DAYS</span>
+    </div>
+    <div class="chart-wrap tall">
+      <canvas id="specialtyChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Trust RTT Table -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Trust RTT Performance</span>
+      <span class="panel-tag">% WITHIN 18 WEEKS</span>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Trust</th>
+          <th>Type</th>
+          <th>%&lt;18wk</th>
+          <th>Avg wait</th>
+          <th>Target</th>
+        </tr>
+      </thead>
+      <tbody id="trustTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- A&E Disposal Breakdown -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">A&amp;E Disposal Outcomes</span>
+      <span class="panel-tag">COUNT BY DISPOSAL TYPE</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="disposalChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Bed Occupancy / DTOC -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Bed Occupancy &amp; DTOC by Trust</span>
+      <span class="panel-tag">DELAYED TRANSFERS OF CARE</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="dtocChart"></canvas>
+    </div>
+  </div>
+
+  <!-- ICD-10 Demand Heatmap as bar -->
+  <div class="panel wide">
+    <div class="panel-header">
+      <span class="panel-title">Pathway Volume by ICD-10 Code Group &amp; Specialty</span>
+      <span class="panel-tag">CLINICAL CODING BREAKDOWN</span>
+    </div>
+    <div class="chart-wrap" style="height:200px;">
+      <canvas id="icdChart"></canvas>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <span>NHS RTT PATHWAY ANALYTICS DASHBOARD &nbsp;·&nbsp; SYNTHETIC DATA — NOT REAL PATIENT DATA &nbsp;·&nbsp; ADAM HUSSAIN 2025</span>
+  <span>ICD-10 · OPCS-4 · SUS/HES STRUCTURE · RTT STANDARDS · A&amp;E SITETYPES</span>
+</footer>
+
+<script>
+// ── Embedded Data ──────────────────────────────────────────────────────────
+const DATA = {
+  rttTrend: [{"year_month":"2023-01","breach_pct":26.8,"avg_wait":106.0},{"year_month":"2023-02","breach_pct":26.3,"avg_wait":105.3},{"year_month":"2023-03","breach_pct":27.3,"avg_wait":106.4},{"year_month":"2023-04","breach_pct":25.7,"avg_wait":105.8},{"year_month":"2023-05","breach_pct":26.5,"avg_wait":105.7},{"year_month":"2023-06","breach_pct":27.0,"avg_wait":107.0},{"year_month":"2023-07","breach_pct":30.4,"avg_wait":109.6},{"year_month":"2023-08","breach_pct":29.2,"avg_wait":109.6},{"year_month":"2023-09","breach_pct":28.7,"avg_wait":110.5},{"year_month":"2023-10","breach_pct":28.1,"avg_wait":109.3},{"year_month":"2023-11","breach_pct":28.4,"avg_wait":106.8},{"year_month":"2023-12","breach_pct":29.0,"avg_wait":109.2},{"year_month":"2024-01","breach_pct":37.9,"avg_wait":122.3},{"year_month":"2024-02","breach_pct":36.3,"avg_wait":119.9},{"year_month":"2024-03","breach_pct":39.4,"avg_wait":118.7},{"year_month":"2024-04","breach_pct":36.5,"avg_wait":118.4},{"year_month":"2024-05","breach_pct":37.1,"avg_wait":120.0},{"year_month":"2024-06","breach_pct":38.4,"avg_wait":119.3},{"year_month":"2024-07","breach_pct":40.0,"avg_wait":119.9},{"year_month":"2024-08","breach_pct":34.7,"avg_wait":118.4},{"year_month":"2024-09","breach_pct":37.9,"avg_wait":122.9},{"year_month":"2024-10","breach_pct":36.5,"avg_wait":120.4},{"year_month":"2024-11","breach_pct":35.9,"avg_wait":119.6},{"year_month":"2024-12","breach_pct":31.0,"avg_wait":121.9}],
+  aeTrend: [{"year_month":"2023-01","breach_pct":24.6,"avg_time":193},{"year_month":"2023-02","breach_pct":23.7,"avg_time":196},{"year_month":"2023-03","breach_pct":25.6,"avg_time":198},{"year_month":"2023-04","breach_pct":26.7,"avg_time":201},{"year_month":"2023-05","breach_pct":26.4,"avg_time":198},{"year_month":"2023-06","breach_pct":23.9,"avg_time":193},{"year_month":"2023-07","breach_pct":28.1,"avg_time":200},{"year_month":"2023-08","breach_pct":24.6,"avg_time":197},{"year_month":"2023-09","breach_pct":25.0,"avg_time":195},{"year_month":"2023-10","breach_pct":26.6,"avg_time":198},{"year_month":"2023-11","breach_pct":28.2,"avg_time":203},{"year_month":"2023-12","breach_pct":25.2,"avg_time":197},{"year_month":"2024-01","breach_pct":25.1,"avg_time":194},{"year_month":"2024-02","breach_pct":27.8,"avg_time":200},{"year_month":"2024-03","breach_pct":26.9,"avg_time":198},{"year_month":"2024-04","breach_pct":29.1,"avg_time":203},{"year_month":"2024-05","breach_pct":25.8,"avg_time":200},{"year_month":"2024-06","breach_pct":26.0,"avg_time":196},{"year_month":"2024-07","breach_pct":25.3,"avg_time":195},{"year_month":"2024-08","breach_pct":27.8,"avg_time":203},{"year_month":"2024-09","breach_pct":24.6,"avg_time":198},{"year_month":"2024-10","breach_pct":26.4,"avg_time":199},{"year_month":"2024-11","breach_pct":27.9,"avg_time":202},{"year_month":"2024-12","breach_pct":26.4,"avg_time":202}],
+  trustRtt: [{"trust_code":"RAX","trust_name":"Kingston Hospital NHS FT","region":"London","trust_type":"DGH","total_pathways":1489,"breach_count":508,"pct_within_18wk":65.9,"avg_wait_days":117.1,"nhs_target_met":false},{"trust_code":"RBD","trust_name":"Dorset County Hospital","region":"South West","trust_type":"DGH","total_pathways":1514,"breach_count":524,"pct_within_18wk":65.4,"avg_wait_days":116.1,"nhs_target_met":false},{"trust_code":"RDE","trust_name":"Essex Partnership University NHS FT","region":"East of England","trust_type":"DGH","total_pathways":1449,"breach_count":546,"pct_within_18wk":62.3,"avg_wait_days":119.3,"nhs_target_met":false},{"trust_code":"RJ1","trust_name":"Guy's and St Thomas' NHS FT","region":"London","trust_type":"Teaching","total_pathways":1544,"breach_count":449,"pct_within_18wk":70.9,"avg_wait_days":109.8,"nhs_target_met":false},{"trust_code":"RM2","trust_name":"University Hospitals of Leicester","region":"Midlands","trust_type":"Teaching","total_pathways":1525,"breach_count":442,"pct_within_18wk":71.0,"avg_wait_days":110.0,"nhs_target_met":false},{"trust_code":"RQ6","trust_name":"Manchester University NHS FT","region":"North West","trust_type":"Teaching","total_pathways":1451,"breach_count":425,"pct_within_18wk":70.7,"avg_wait_days":107.4,"nhs_target_met":false},{"trust_code":"RRV","trust_name":"University College London Hospitals","region":"London","trust_type":"Teaching","total_pathways":1552,"breach_count":483,"pct_within_18wk":68.9,"avg_wait_days":111.2,"nhs_target_met":false},{"trust_code":"RVV","trust_name":"East Kent Hospitals University FT","region":"South East","trust_type":"DGH","total_pathways":1458,"breach_count":510,"pct_within_18wk":65.0,"avg_wait_days":118.0,"nhs_target_met":false},{"trust_code":"RX1","trust_name":"Nottingham University Hospitals","region":"Midlands","trust_type":"Teaching","total_pathways":1535,"breach_count":436,"pct_within_18wk":71.6,"avg_wait_days":108.7,"nhs_target_met":false},{"trust_code":"RXW","trust_name":"Shrewsbury and Telford Hospital","region":"Midlands","trust_type":"DGH","total_pathways":1483,"breach_count":535,"pct_within_18wk":63.9,"avg_wait_days":118.7,"nhs_target_met":false}],
+  specialty: [{"specialty_name":"Cardiothoracic Surgery","avg_wait_days":154.2,"breach_count":609,"pct_within_18wk":39.6,"waitlist_pressure":24.3},{"specialty_name":"Neurosurgery","avg_wait_days":142.6,"breach_count":546,"pct_within_18wk":45.1,"waitlist_pressure":23.9},{"specialty_name":"Neurology","avg_wait_days":135.6,"breach_count":538,"pct_within_18wk":49.9,"waitlist_pressure":21.9},{"specialty_name":"Trauma & Orthopaedics","avg_wait_days":128.6,"breach_count":428,"pct_within_18wk":58.2,"waitlist_pressure":26.7},{"specialty_name":"Ophthalmology","avg_wait_days":124.7,"breach_count":383,"pct_within_18wk":59.6,"waitlist_pressure":25.0},{"specialty_name":"Rheumatology","avg_wait_days":117.5,"breach_count":360,"pct_within_18wk":64.4,"waitlist_pressure":24.5},{"specialty_name":"Cardiology","avg_wait_days":114.7,"breach_count":339,"pct_within_18wk":65.9,"waitlist_pressure":24.8},{"specialty_name":"Urology","avg_wait_days":113.9,"breach_count":311,"pct_within_18wk":69.8,"waitlist_pressure":24.7},{"specialty_name":"Gastroenterology","avg_wait_days":106.4,"breach_count":273,"pct_within_18wk":72.3,"waitlist_pressure":23.7},{"specialty_name":"ENT","avg_wait_days":105.1,"breach_count":248,"pct_within_18wk":74.4,"waitlist_pressure":25.9}],
+  dtoc: [{"trust_name":"Kingston Hospital NHS FT","avg_occupancy":84.5,"avg_dtoc_days":10.9},{"trust_name":"Dorset County Hospital","avg_occupancy":83.3,"avg_dtoc_days":11.2},{"trust_name":"Essex Partnership Univ. FT","avg_occupancy":83.8,"avg_dtoc_days":9.4},{"trust_name":"Guy's & St Thomas' FT","avg_occupancy":87.9,"avg_dtoc_days":10.4},{"trust_name":"Univ. Hospitals Leicester","avg_occupancy":87.8,"avg_dtoc_days":11.1},{"trust_name":"Manchester University FT","avg_occupancy":88.1,"avg_dtoc_days":11.0},{"trust_name":"UCL Hospitals","avg_occupancy":88.0,"avg_dtoc_days":12.4},{"trust_name":"East Kent Hospitals FT","avg_occupancy":83.7,"avg_dtoc_days":11.2},{"trust_name":"Nottingham Univ. Hospitals","avg_occupancy":87.2,"avg_dtoc_days":12.1},{"trust_name":"Shrewsbury & Telford","avg_occupancy":83.4,"avg_dtoc_days":10.6}],
+  disposal: [{"disposal":"Admitted","count":5645},{"disposal":"Discharged","count":10993},{"disposal":"Referred to GP","count":1601},{"disposal":"Left without being seen","count":983},{"disposal":"Transferred","count":708},{"disposal":"Died in department","count":70}],
+  icd: [
+    {code:"K (Digestive)", count: 2100}, {code:"M (Musculoskeletal)", count: 2040},
+    {code:"N (Genitourinary)", count: 1030}, {code:"H (Eye/Ear)", count: 1920},
+    {code:"G (Neurological)", count: 2070}, {code:"I (Circulatory)", count: 2000},
+    {code:"J (Respiratory)", count: 970}, {code:"L (Skin)", count: 950},
+    {code:"R (Symptoms)", count: 920}
+  ]
+};
+
+// ── Chart defaults ──────────────────────────────────────────────────────────
+Chart.defaults.color = '#6b7a99';
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const gridColor = 'rgba(30,39,64,0.8)';
+const tooltipStyle = {
+  backgroundColor: '#111622',
+  borderColor: '#1e2740',
+  borderWidth: 1,
+  titleColor: '#e8edf8',
+  bodyColor: '#6b7a99',
+  padding: 10,
+  cornerRadius: 3,
+};
+
+// ── 1. RTT Trend ────────────────────────────────────────────────────────────
+new Chart(document.getElementById('rttTrendChart'), {
+  type: 'line',
+  data: {
+    labels: DATA.rttTrend.map(d => d.year_month.slice(5) + ' ' + d.year_month.slice(0,4)),
+    datasets: [
+      {
+        label: 'Breach %',
+        data: DATA.rttTrend.map(d => d.breach_pct),
+        borderColor: '#FF6B35',
+        backgroundColor: 'rgba(255,107,53,0.06)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        yAxisID: 'y',
+      },
+      {
+        label: 'Avg Wait (days)',
+        data: DATA.rttTrend.map(d => d.avg_wait),
+        borderColor: '#00A9CE',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderDash: [4,3],
+        tension: 0.3,
+        pointRadius: 0,
+        yAxisID: 'y2',
+      },
+      {
+        label: 'Target (8% breach)',
+        data: DATA.rttTrend.map(() => 8),
+        borderColor: '#00D4A8',
+        borderDash: [6,4],
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: false,
+        yAxisID: 'y',
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, padding: 12 } }, tooltip: tooltipStyle },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { maxTicksLimit: 12 } },
+      y: { grid: { color: gridColor }, title: { display: true, text: 'Breach %' }, min: 0, max: 50 },
+      y2: { position: 'right', grid: { display: false }, title: { display: true, text: 'Avg Wait (days)' }, min: 90, max: 140 }
+    }
+  }
+});
+
+// ── 2. A&E Trend ────────────────────────────────────────────────────────────
+new Chart(document.getElementById('aeTrendChart'), {
+  type: 'line',
+  data: {
+    labels: DATA.aeTrend.map(d => d.year_month.slice(5) + ' ' + d.year_month.slice(0,4)),
+    datasets: [
+      {
+        label: '4hr Breach %',
+        data: DATA.aeTrend.map(d => d.breach_pct),
+        borderColor: '#FF6B35',
+        backgroundColor: 'rgba(255,107,53,0.06)',
+        fill: true, tension: 0.3, borderWidth: 2,
+        pointRadius: 2, pointHoverRadius: 5,
+        yAxisID: 'y',
+      },
+      {
+        label: 'Target (24% breach)',
+        data: DATA.aeTrend.map(() => 24),
+        borderColor: '#00D4A8', borderDash: [6,4], borderWidth: 1,
+        pointRadius: 0, fill: false, yAxisID: 'y',
+      },
+      {
+        label: 'Avg Time (mins)',
+        data: DATA.aeTrend.map(d => d.avg_time),
+        borderColor: '#6eb3ff', borderDash: [3,3], borderWidth: 1.5,
+        pointRadius: 0, fill: false, yAxisID: 'y2',
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, padding: 12 } }, tooltip: tooltipStyle },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { maxTicksLimit: 12 } },
+      y: { grid: { color: gridColor }, title: { display: true, text: 'Breach %' }, min: 15, max: 40 },
+      y2: { position: 'right', grid: { display: false }, title: { display: true, text: 'Avg Mins' }, min: 170, max: 220 }
+    }
+  }
+});
+
+// ── 3. Specialty Horizontal Bar ─────────────────────────────────────────────
+new Chart(document.getElementById('specialtyChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.specialty.map(d => d.specialty_name),
+    datasets: [
+      {
+        label: 'Avg Wait (days)',
+        data: DATA.specialty.map(d => d.avg_wait_days),
+        backgroundColor: DATA.specialty.map(d =>
+          d.avg_wait_days > 140 ? 'rgba(255,107,53,0.8)' :
+          d.avg_wait_days > 120 ? 'rgba(255,107,53,0.5)' : 'rgba(0,169,206,0.6)'
+        ),
+        borderWidth: 0,
+      }
+    ]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { ...tooltipStyle, callbacks: { label: ctx => ` ${ctx.raw} days avg wait` } } },
+    scales: {
+      x: { grid: { color: gridColor }, min: 80, title: { display: true, text: 'Avg Wait (days)' } },
+      y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+    }
+  }
+});
+
+// ── 4. Trust table ──────────────────────────────────────────────────────────
+const tbody = document.getElementById('trustTableBody');
+DATA.trustRtt.sort((a, b) => b.pct_within_18wk - a.pct_within_18wk).forEach(t => {
+  const pct = t.pct_within_18wk;
+  const fillColor = pct >= 92 ? '#00D4A8' : pct >= 75 ? '#00A9CE' : '#FF6B35';
+  tbody.innerHTML += `
+    <tr>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.trust_name}</td>
+      <td><span class="badge ${t.trust_type === 'Teaching' ? 'teach' : 'dgh'}">${t.trust_type}</span></td>
+      <td>
+        <div class="bar-inline">
+          <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+          <span style="color:${fillColor};font-size:11px;min-width:38px">${pct}%</span>
+        </div>
+      </td>
+      <td>${t.avg_wait_days}d</td>
+      <td><span class="badge ${t.nhs_target_met ? 'meet' : 'miss'}">${t.nhs_target_met ? 'MET' : 'MISS'}</span></td>
+    </tr>`;
+});
+
+// ── 5. Disposal Doughnut ────────────────────────────────────────────────────
+new Chart(document.getElementById('disposalChart'), {
+  type: 'doughnut',
+  data: {
+    labels: DATA.disposal.map(d => d.disposal),
+    datasets: [{
+      data: DATA.disposal.map(d => d.count),
+      backgroundColor: ['#005EB8','#00A9CE','#00D4A8','#FF6B35','#6eb3ff','#6b7a99'],
+      borderColor: '#111622',
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: { position: 'right', labels: { boxWidth: 10, padding: 10, font: { size: 10 } } },
+      tooltip: tooltipStyle
+    }
+  }
+});
+
+// ── 6. DTOC Scatter-style dual bar ─────────────────────────────────────────
+new Chart(document.getElementById('dtocChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.dtoc.map(d => d.trust_name.split(' ').slice(0,2).join(' ')),
+    datasets: [
+      {
+        label: 'Bed Occupancy %',
+        data: DATA.dtoc.map(d => d.avg_occupancy),
+        backgroundColor: 'rgba(0,94,184,0.7)',
+        borderWidth: 0,
+        yAxisID: 'y',
+      },
+      {
+        label: 'DTOC Days',
+        data: DATA.dtoc.map(d => d.avg_dtoc_days),
+        backgroundColor: 'rgba(255,107,53,0.7)',
+        borderWidth: 0,
+        yAxisID: 'y2',
+        type: 'line',
+        tension: 0.3,
+        pointRadius: 3,
+        borderColor: '#FF6B35',
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, padding: 10 } }, tooltip: tooltipStyle },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { font: { size: 9 } } },
+      y: { grid: { color: gridColor }, min: 75, max: 95, title: { display: true, text: 'Occupancy %' } },
+      y2: { position: 'right', grid: { display: false }, min: 5, max: 18, title: { display: true, text: 'DTOC Days' } }
+    }
+  }
+});
+
+// ── 7. ICD-10 Volume Bar ────────────────────────────────────────────────────
+new Chart(document.getElementById('icdChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.icd.map(d => d.code),
+    datasets: [{
+      label: 'Pathway Volume',
+      data: DATA.icd.map(d => d.count),
+      backgroundColor: [
+        'rgba(0,94,184,0.7)','rgba(0,169,206,0.7)','rgba(0,212,168,0.7)',
+        'rgba(0,94,184,0.5)','rgba(255,107,53,0.7)','rgba(0,169,206,0.5)',
+        'rgba(110,179,255,0.7)','rgba(0,212,168,0.5)','rgba(255,107,53,0.5)'
+      ],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { ...tooltipStyle, callbacks: { label: ctx => ` ${ctx.raw.toLocaleString()} pathways` } } },
+    scales: {
+      x: { grid: { display: false } },
+      y: { grid: { color: gridColor }, title: { display: true, text: 'Pathway Count' } }
+    }
+  }
+});
+</script>
+</body>
+</html>
